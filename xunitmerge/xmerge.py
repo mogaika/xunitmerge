@@ -76,6 +76,47 @@ def patch_etree_cname(etree):
     etree._serialize_xml = etree._serialize['xml'] = original_serialize
 
 
+def is_test_state(xml_element, state):
+    for i in xml_element.iter(state):
+        return True
+    return False
+
+
+def is_test_skipped(xml_element):
+    return is_test_state(xml_element, 'skipped')
+
+
+def test_get_name(xml_element):
+    return xml_element.attrib['name']
+
+
+def test_suite_update_attribs(test_suite):
+    suite_state = {
+        "tests": 0,
+        "skipped": 0,
+        "failures": 0,
+        "errors": 0,
+        "time": 0.0,
+    }
+
+    for test in test_suite.iter('testcase'):
+        suite_state['time'] += float(test.attrib.get('time', '0'))
+
+        if is_test_state(test, 'skipped'):
+            suite_state['skipped'] += 1
+        else:
+            suite_state['tests'] += 1
+            if is_test_state(test, 'failure'):
+                suite_state['failures'] += 1
+            elif is_test_state(test, 'error'):
+                suite_state['errors'] += 1
+
+    for key in suite_state:
+        test_suite.set(key, six.text_type(suite_state[key]))
+
+    return test_suite
+
+
 def merge_trees(*trees):
     """
     Merge all given XUnit ElementTrees into a single ElementTree.
@@ -85,22 +126,58 @@ def merge_trees(*trees):
     first_tree = trees[0]
     first_root = first_tree.getroot()
 
-    if len(trees) == 0:
+    if len(trees) <= 1:
         return first_tree
 
+    # Tracking of skipped and completed tests allow us to handle
+    # override skipped test result by completed test result
+    skipped_tests = dict()
+    completed_tests = []
+
+    # remove skipped tests from first tree
+    # and fill tracks of completed and skipped tests
+    for test in first_root.findall("testcase"):
+        test_name = test_get_name(test)
+
+        if is_test_skipped(test):
+            first_root.remove(test)
+            if test_name not in skipped_tests:
+                skipped_tests[test_name] = test
+        else:
+            if test_name not in completed_tests:
+                completed_tests.append(test_name)
+
+    # cycle over others trees
     for tree in trees[1:]:
         root = tree.getroot()
 
-        # append children elements (testcases)
-        first_root.extend(root.getchildren())
+        for test in root:
+            # for every testcase add it to first_root if it not skipped
+            # else add it to skipped_tests dict
 
-        # combine root attributes which stores the number
-        # of executed tests, skipped tests, etc
-        for key, value in first_root.attrib.items():
-            if not value.isdigit():
-                continue
-            combined = six.text_type(int(value) + int(root.attrib.get(key, '0')))
-            first_root.set(key, combined)
+            test_name = test_get_name(test)
+            if is_test_skipped(test):
+                if test_name not in completed_tests and test_name not in skipped_tests:
+                    skipped_tests[test_name] = test
+            else:
+                if test_name in skipped_tests:
+                    # overriding of previously skipped test
+                    del skipped_tests[test_name]
+                    if test_name in skipped_tests:
+                        print("not removed?")
+                if test_name in completed_tests:
+                    print("WARNING: Duplication of completed '{}' test case".format(test_name))
+                else:
+                    completed_tests.append(test_name)
+                first_root.append(test)
+
+    # add skipped tests that stored separately
+    for test_name in skipped_tests:
+        if test_name not in completed_tests:
+            first_root.append(skipped_tests[test_name])
+
+    # update attributes of testsuite tag
+    test_suite_update_attribs(first_root)
 
     return first_tree
 

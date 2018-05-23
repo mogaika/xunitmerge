@@ -10,13 +10,13 @@ def read(fname):
 
 setup(
     name='xunitmerge',
-    version='1.0.4',
-    author='Miroslav Shubernetskiy',
-    author_email='miroslav@miki725.com',
+    version='1.0.5',
+    author='Miroslav Shubernetskiy, Vladimir Jigulin',
+    author_email='miroslav@miki725.com, vjigulin@mirantis.com',
     description='Utility for merging multiple XUnit xml reports '
                 'into a single xml report.',
     long_description=read('README.rst') + read('LICENSE.rst'),
-    url='https://github.com/miki725/xunitmerge',
+    url='https://github.com/mogaika/xunitmerge',
     packages=find_packages(exclude=['test', 'test.*']),
     scripts=['bin/xunitmerge'],
     install_requires=[
